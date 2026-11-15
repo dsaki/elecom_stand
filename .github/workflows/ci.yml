@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  core-tests:
+    name: Core tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift test
+        run: swift test
+
+  ios-build:
+    name: iOS build (unsigned)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: xcodebuild
+        run: |
+          set -o pipefail
+          xcodebuild -project EPaperCase.xcodeproj -target EPaperCase -configuration Debug \
+            -sdk iphoneos CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build | tail -n 200

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NFCReaderUsageDescription</key>
+	<string>電子ペーパーケースに画像を書き込むためにNFCを使用します。</string>
+	<key>com.apple.developer.nfc.readersession.iso7816.select-identifiers</key>
+	<array>
+		<string>D2760000850101</string>
+		<string>D2760000850100</string>
+		<string>00000001</string>
+		<string>201EA001</string>
+		<string>A00000000386980701</string>
+	</array>
+</dict>
+</plist>
