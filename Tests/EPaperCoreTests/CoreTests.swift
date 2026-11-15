@@ -355,7 +355,7 @@ final class WriteJobTests: XCTestCase {
         let expected = FramePacker.pack(portrait: checkerImage(seenLayout!), layout: seenLayout!)
         XCTAssertEqual(board.storedFrame, expected)
         XCTAssertEqual(board.refreshCount, 1)
-        XCTAssertTrue(board.sent.contains { $0.hexString == "F0D4940000" })
+        XCTAssertTrue(board.sent.contains { $0.hexString == "F0D4850000" })
         // D4 の後も、描画が終わるまで状態確認を続けて給電を保つ
         XCTAssertEqual(board.sent.suffix(4).map { $0.hexString }, [String](repeating: "F0DE000001", count: 4))
         // パネル設定を書き換えるコマンド (DA/DB) は絶対に送らない
@@ -444,7 +444,7 @@ final class WriteJobTests: XCTestCase {
         let outcome = try await job.run(transport: board, connectedAt: start, sessionStartedAt: start) { _ in }
         XCTAssertEqual(outcome, .finished)
         XCTAssertFalse(board.sent.contains { $0[1] == 0xD3 })
-        XCTAssertTrue(board.sent.contains { $0.hexString == "F0D4948000" })
+        XCTAssertTrue(board.sent.contains { $0.hexString == "F0D4858000" })
         XCTAssertEqual(board.sent.filter { $0[1] == 0xDE }.count, 4)
     }
 

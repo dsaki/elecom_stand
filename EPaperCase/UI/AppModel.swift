@@ -7,7 +7,7 @@ struct AppSettings: Equatable, Codable {
     /// 最後にケースから読み取れたレイアウト（プレビューの寸法合わせ用）
     var lastLayout: PanelLayout?
 
-    private static let key = "settings.v1"
+    private static let key = "settings.v2"
 
     static func load() -> AppSettings {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -196,7 +196,7 @@ final class AppModel: ObservableObject {
                     let writer = NFCWriter(
                         job: job,
                         startMessage: first
-                            ? "ケースの背面をスマホ上部の裏側に当ててください"
+                            ? "ケースの内側（スマホを入れる面）をスマホ背面の上部に重ねてください"
                             : "続きを書き込みます。そのまま動かさないでください",
                         doneMessage: doneMessage,
                         log: { [weak self] line in

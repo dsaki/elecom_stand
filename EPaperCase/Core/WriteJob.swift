@@ -39,7 +39,7 @@ struct WriteOptions: Equatable, Codable {
     /// D4 の P1 最上位ビット（検出の省略）。
     var skipDetection = true
     /// 描画指示から実際にパネルの電源を入れるまで基板に待たせる時間（100ms 単位）。
-    var powerOnDelayTenths = 20
+    var powerOnDelayTenths = 5
     /// タグに接続してから描画指示を送るまで、給電だけして待つ秒数。
     var chargeSeconds: Double = 2.5
 

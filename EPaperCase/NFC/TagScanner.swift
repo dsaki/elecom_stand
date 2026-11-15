@@ -16,7 +16,7 @@ final class TagScanner: NSObject, NFCTagReaderSessionDelegate {
                 return
             }
             self.session = session
-            session.alertMessage = "ケースの背面をスマホ上部に当て、ゆっくり位置をずらしてください"
+            session.alertMessage = "ケースの内側をスマホ背面の上部に重ね、ゆっくり位置をずらしてください"
             session.begin()
         }
     }
