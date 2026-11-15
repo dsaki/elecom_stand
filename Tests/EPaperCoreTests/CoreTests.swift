@@ -312,7 +312,14 @@ private final class MockBoard: APDUTransport {
 final class WriteJobTests: XCTestCase {
     // モックの A0 は「64ビット(=32画素) × 16」の4色・縦スキャン → 16×32 画素
     private func checkerImage(_ layout: PanelLayout) -> [UInt8] {
-        (0..<(layout.portraitWidth * layout.portraitHeight)).map { UInt8(($0 * 7 + $0 / 5) % 4) }
+        let count = layout.portraitWidth * layout.portraitHeight
+        var image = [UInt8]()
+        image.reserveCapacity(count)
+        for i in 0..<count {
+            let value: Int = (i * 7 + i / 5) % 4
+            image.append(UInt8(value))
+        }
+        return image
     }
 
     func testWriteUploadsFrameThenRefreshes() async throws {
