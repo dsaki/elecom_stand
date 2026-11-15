@@ -456,7 +456,7 @@ final class WriteJobTests: XCTestCase {
         job.sleep = { _ in }
         let start = Date()
         let first = try await job.run(transport: board, connectedAt: start, sessionStartedAt: start) { _ in }
-        XCTAssertEqual(first, .reconnect)
+        XCTAssertEqual(first, .newSession)
         let second = try await job.run(transport: board, connectedAt: Date(), sessionStartedAt: start) { _ in }
         XCTAssertEqual(second, .finished)
         // 描画指示と画像は一度しか送らない
@@ -464,6 +464,22 @@ final class WriteJobTests: XCTestCase {
         let imagePackets = board.sent.filter { $0[1] == 0xD3 }
         XCTAssertEqual(Set(imagePackets).count, imagePackets.count)
         XCTAssertEqual(job.refreshReconnects, 1)
+    }
+
+    func testReconnectsProactivelyDuringLongRefresh() async throws {
+        let board = MockBoard()
+        board.busyPolls = 30
+        var clock = Date(timeIntervalSince1970: 5_000)
+        let job = WriteJob(kind: .refreshOnly, options: fastOptions())
+        job.now = { clock }
+        job.sleep = { seconds in clock += 1 }
+        var outcomes: [WriteJob.Outcome] = []
+        while outcomes.last != .finished {
+            XCTAssertLessThan(outcomes.count, 10)
+            outcomes.append(try await job.run(transport: board, connectedAt: clock, sessionStartedAt: clock) { _ in })
+        }
+        XCTAssertEqual(outcomes, [.reconnect, .reconnect, .finished])
+        XCTAssertEqual(board.refreshCount, 1)
     }
 
     func testErrorsAreReportedWithStatusWord() async throws {

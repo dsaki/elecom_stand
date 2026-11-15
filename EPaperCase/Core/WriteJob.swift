@@ -116,9 +116,11 @@ final class WriteJob {
         /// 接続からこの秒数を超えていたら、描画の前につなぎ直す
         var reconnectBeforeRefresh: TimeInterval = 6
         var pollInterval: TimeInterval = 0.4
-        var pollTimeout: TimeInterval = 50
-        /// 描画待ち中に接続が切れたとき、つなぎ直して待ち続ける回数の上限
-        var maxRefreshReconnects = 3
+        var pollTimeout: TimeInterval = 60
+        /// 描画待ち中につなぎ直して待ち続ける回数の上限
+        var maxRefreshReconnects = 4
+        /// 描画待ち中、接続からこの秒数を超えたら iOS に切られる前に自分からつなぎ直す
+        var reconnectDuringRefresh: TimeInterval = 14
     }
 
     let kind: Kind
@@ -328,6 +330,13 @@ final class WriteJob {
         var idleCount = 0
         var firstPoll = true
         while true {
+            // iOS に20秒で切られると読み取りシートごと無効になるので、その前に自分からつなぎ直す。
+            if now().timeIntervalSince(connectedAt) > timing.reconnectDuringRefresh,
+               refreshReconnects < timing.maxRefreshReconnects {
+                refreshReconnects += 1
+                log("描画待ちを続けるため、つなぎ直します (描画開始から \(String(format: "%.1f", now().timeIntervalSince(started))) 秒)")
+                return .reconnect
+            }
             await sleep(timing.pollInterval)
             let state: APDUResponse
             do {
@@ -335,8 +344,8 @@ final class WriteJob {
             } catch {
                 guard refreshReconnects < timing.maxRefreshReconnects else { throw error }
                 refreshReconnects += 1
-                log("描画待ち中に接続が切れました (描画開始から \(String(format: "%.1f", now().timeIntervalSince(started))) 秒)。つなぎ直します")
-                return .reconnect
+                log("描画待ち中に接続が切れました (描画開始から \(String(format: "%.1f", now().timeIntervalSince(started))) 秒)。読み取りを開き直します")
+                return .newSession
             }
             firstPoll = false
             guard state.isOK else {
