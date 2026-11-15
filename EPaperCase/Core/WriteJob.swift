@@ -38,6 +38,10 @@ struct WriteOptions: Equatable, Codable {
     var blockingRefresh = true
     /// D4 の P1 最上位ビット（検出の省略）。
     var skipDetection = true
+    /// 描画指示から実際にパネルの電源を入れるまで基板に待たせる時間（100ms 単位）。
+    var powerOnDelayTenths = 20
+    /// タグに接続してから描画指示を送るまで、給電だけして待つ秒数。
+    var chargeSeconds: Double = 2.5
 
     var pin: Data? {
         switch pinMode {
@@ -110,7 +114,7 @@ final class WriteJob {
         /// セッション開始からこの秒数を超えていたら、描画の前にセッションを張り直す
         var newSessionBeforeRefresh: TimeInterval = 25
         /// 接続からこの秒数を超えていたら、描画の前につなぎ直す
-        var reconnectBeforeRefresh: TimeInterval = 3
+        var reconnectBeforeRefresh: TimeInterval = 6
         var pollInterval: TimeInterval = 0.4
         var pollTimeout: TimeInterval = 50
         /// 描画待ち中に接続が切れたとき、つなぎ直して待ち続ける回数の上限
@@ -295,8 +299,20 @@ final class WriteJob {
                 return .reconnect
             }
 
+            // 描画の開始時はパネルの昇圧で大きな電力を使う。接続直後に指示すると電圧が落ちて
+            // 基板がリセットされるので、先に少し給電してから始める。
+            let charged = now().timeIntervalSince(connectedAt)
+            if charged < options.chargeSeconds {
+                progress(Progress(message: "ケースに給電中…\nそのまま動かさないでください", fraction: 1))
+                await sleep(options.chargeSeconds - charged)
+            }
+
             progress(Progress(message: refreshMessage, fraction: 1))
-            let command = FMSC.refresh(blocking: options.blockingRefresh, skipDetection: options.skipDetection)
+            let command = FMSC.refresh(
+                blocking: options.blockingRefresh,
+                skipDetection: options.skipDetection,
+                powerOnDelayTenths: options.powerOnDelayTenths
+            )
             let refresh = try await exchange(transport, "画面更新(D4)", command)
             try requireOK(refresh, "画面更新")
             refreshStartedAt = now()

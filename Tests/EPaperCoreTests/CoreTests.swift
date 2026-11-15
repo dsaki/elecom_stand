@@ -251,6 +251,8 @@ final class UploadEncodingTests: XCTestCase {
         XCTAssertEqual(FMSC.refresh(blocking: true).hexString, "F0D4850000")
         XCTAssertEqual(FMSC.refresh(blocking: false).hexString, "F0D4858000")
         XCTAssertEqual(FMSC.refresh(blocking: true, skipDetection: false).hexString, "F0D4050000")
+        XCTAssertEqual(FMSC.refresh(blocking: true, powerOnDelayTenths: 20).hexString, "F0D4940000")
+        XCTAssertEqual(FMSC.refresh(blocking: true, powerOnDelayTenths: 999).hexString, "F0D4FF0000")
         XCTAssertEqual(FMSC.verifyPIN(Data([1, 2, 3, 4, 5])).hexString, "00200001050102030405")
         XCTAssertEqual(FMSC.checkAccess.hexString, "F0D8000005000000000E")
     }
@@ -320,6 +322,12 @@ private final class MockBoard: APDUTransport {
 }
 
 final class WriteJobTests: XCTestCase {
+    private func fastOptions() -> WriteOptions {
+        var options = WriteOptions()
+        options.chargeSeconds = 0
+        return options
+    }
+
     // モックの A0 は「64ビット(=32画素) × 16」の4色・縦スキャン → 16×32 画素
     private func checkerImage(_ layout: PanelLayout) -> [UInt8] {
         let count = layout.portraitWidth * layout.portraitHeight
@@ -335,7 +343,7 @@ final class WriteJobTests: XCTestCase {
     func testWriteUploadsFrameThenRefreshes() async throws {
         let board = MockBoard()
         var seenLayout: PanelLayout?
-        let job = WriteJob(kind: .write, options: WriteOptions()) { layout in
+        let job = WriteJob(kind: .write, options: fastOptions()) { layout in
             seenLayout = layout
             return self.checkerImage(layout)
         }
@@ -347,7 +355,7 @@ final class WriteJobTests: XCTestCase {
         let expected = FramePacker.pack(portrait: checkerImage(seenLayout!), layout: seenLayout!)
         XCTAssertEqual(board.storedFrame, expected)
         XCTAssertEqual(board.refreshCount, 1)
-        XCTAssertTrue(board.sent.contains { $0.hexString == "F0D4850000" })
+        XCTAssertTrue(board.sent.contains { $0.hexString == "F0D4940000" })
         // D4 の後も、描画が終わるまで状態確認を続けて給電を保つ
         XCTAssertEqual(board.sent.suffix(4).map { $0.hexString }, [String](repeating: "F0DE000001", count: 4))
         // パネル設定を書き換えるコマンド (DA/DB) は絶対に送らない
@@ -359,7 +367,7 @@ final class WriteJobTests: XCTestCase {
         // 96×800 相当まで大きくして複数ブロックにする: 1600ビット × 96
         board.infoTLV = Data(hex: "A0070007000640 0060 A10700000000000000 C10401020304 D10701000000000000")!
         var clock = Date(timeIntervalSince1970: 1_000)
-        let job = WriteJob(kind: .write, options: WriteOptions()) { layout in
+        let job = WriteJob(kind: .write, options: fastOptions()) { layout in
             var state: UInt32 = 99
             return (0..<(layout.portraitWidth * layout.portraitHeight)).map { _ -> UInt8 in
                 state = state &* 1_664_525 &+ 1_013_904_223
@@ -399,7 +407,7 @@ final class WriteJobTests: XCTestCase {
         board.pinRequired = true
         let start = Date()
 
-        let refused = WriteJob(kind: .write, options: WriteOptions()) { self.checkerImage($0) }
+        let refused = WriteJob(kind: .write, options: fastOptions()) { self.checkerImage($0) }
         do {
             _ = try await refused.run(transport: board, connectedAt: start, sessionStartedAt: start) { _ in }
             XCTFail("PIN 未設定なら止まるはず")
@@ -408,7 +416,7 @@ final class WriteJobTests: XCTestCase {
         }
         XCTAssertFalse(board.sent.contains { $0[1] == 0x20 || $0[1] == 0xD3 || $0[1] == 0xD4 })
 
-        var options = WriteOptions()
+        var options = fastOptions()
         options.pinMode = .huawei
         let allowed = WriteJob(kind: .write, options: options) { self.checkerImage($0) }
         let outcome = try await allowed.run(transport: board, connectedAt: start, sessionStartedAt: start) { _ in }
@@ -418,7 +426,7 @@ final class WriteJobTests: XCTestCase {
 
     func testProbeNeverWrites() async throws {
         let board = MockBoard()
-        let job = WriteJob(kind: .probe, options: WriteOptions())
+        let job = WriteJob(kind: .probe, options: fastOptions())
         let start = Date()
         let outcome = try await job.run(transport: board, connectedAt: start, sessionStartedAt: start) { _ in }
         XCTAssertEqual(outcome, .finished)
@@ -428,7 +436,7 @@ final class WriteJobTests: XCTestCase {
 
     func testRefreshOnlyAndPollingMode() async throws {
         let board = MockBoard()
-        var options = WriteOptions()
+        var options = fastOptions()
         options.blockingRefresh = false
         let job = WriteJob(kind: .refreshOnly, options: options)
         job.sleep = { _ in }
@@ -436,7 +444,7 @@ final class WriteJobTests: XCTestCase {
         let outcome = try await job.run(transport: board, connectedAt: start, sessionStartedAt: start) { _ in }
         XCTAssertEqual(outcome, .finished)
         XCTAssertFalse(board.sent.contains { $0[1] == 0xD3 })
-        XCTAssertTrue(board.sent.contains { $0.hexString == "F0D4858000" })
+        XCTAssertTrue(board.sent.contains { $0.hexString == "F0D4948000" })
         XCTAssertEqual(board.sent.filter { $0[1] == 0xDE }.count, 4)
     }
 
@@ -444,7 +452,7 @@ final class WriteJobTests: XCTestCase {
         let board = MockBoard()
         board.busyPolls = 5
         board.dropOnBusyPoll = 3
-        let job = WriteJob(kind: .write, options: WriteOptions()) { self.checkerImage($0) }
+        let job = WriteJob(kind: .write, options: fastOptions()) { self.checkerImage($0) }
         job.sleep = { _ in }
         let start = Date()
         let first = try await job.run(transport: board, connectedAt: start, sessionStartedAt: start) { _ in }
@@ -461,7 +469,7 @@ final class WriteJobTests: XCTestCase {
     func testErrorsAreReportedWithStatusWord() async throws {
         let board = MockBoard()
         board.refreshStatus = 0x68CA
-        let job = WriteJob(kind: .write, options: WriteOptions()) { self.checkerImage($0) }
+        let job = WriteJob(kind: .write, options: fastOptions()) { self.checkerImage($0) }
         let start = Date()
         do {
             _ = try await job.run(transport: board, connectedAt: start, sessionStartedAt: start) { _ in }
@@ -473,7 +481,7 @@ final class WriteJobTests: XCTestCase {
 
         let other = MockBoard()
         other.infoTLV = Data(hex: "C10401020304")!
-        let unsupported = WriteJob(kind: .write, options: WriteOptions()) { self.checkerImage($0) }
+        let unsupported = WriteJob(kind: .write, options: fastOptions()) { self.checkerImage($0) }
         do {
             _ = try await unsupported.run(transport: other, connectedAt: start, sessionStartedAt: start) { _ in }
             XCTFail("エラーになるはず")

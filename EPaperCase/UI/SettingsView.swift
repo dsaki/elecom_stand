@@ -29,7 +29,19 @@ struct SettingsView: View {
                         Text("白黒").tag(ColorMode?.some(.blackWhite))
                     }
                     Toggle("描画指示: 応答を待つ (P2=00)", isOn: $model.settings.options.blockingRefresh)
-                    Toggle("描画指示: 検出を省略 (P1=85)", isOn: $model.settings.options.skipDetection)
+                    Toggle("描画指示: 検出を省略", isOn: $model.settings.options.skipDetection)
+                    Stepper(
+                        "描画前の給電待ち: \(String(format: "%.1f", model.settings.options.chargeSeconds)) 秒",
+                        value: $model.settings.options.chargeSeconds,
+                        in: 0...8,
+                        step: 0.5
+                    )
+                    Stepper(
+                        "基板側の電源投入待ち: \(String(format: "%.1f", Double(model.settings.options.powerOnDelayTenths) / 10)) 秒",
+                        value: $model.settings.options.powerOnDelayTenths,
+                        in: 0...100,
+                        step: 5
+                    )
                 } header: {
                     Text("詳細（通常は変更不要）")
                 } footer: {

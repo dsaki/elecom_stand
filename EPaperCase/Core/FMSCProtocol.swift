@@ -26,9 +26,12 @@ enum FMSC {
     /// 保存済みの画像を画面に反映する。
     /// - Parameters:
     ///   - blocking: P2。true (0x00) なら基板が応答を保留する（どこまで待つかは基板による）。
-    ///   - skipDetection: P1 の最上位ビット。下位は電源投入の待ち時間（100ms 単位、ここでは 5）。
-    static func refresh(blocking: Bool, skipDetection: Bool = true) -> Data {
-        let p1: UInt8 = skipDetection ? 0x85 : 0x05
+    ///   - skipDetection: P1 の最上位ビット。
+    ///   - powerOnDelayTenths: P1 の下位7ビット。パネルの電源を入れる前に基板が待つ時間（100ms 単位）。
+    ///     長くすると、高電圧をかける前にコンデンサへ充電する時間を稼げる。
+    static func refresh(blocking: Bool, skipDetection: Bool = true, powerOnDelayTenths: Int = 5) -> Data {
+        let delay = UInt8(min(127, max(0, powerOnDelayTenths)))
+        let p1: UInt8 = (skipDetection ? 0x80 : 0x00) | delay
         let p2: UInt8 = blocking ? 0x00 : 0x80
         return Data([0xF0, 0xD4, p1, p2, 0x00])
     }
