@@ -141,6 +141,29 @@ final class AppModel: ObservableObject {
         start(WriteJob(kind: .probe, options: settings.options), title: "ケース情報の読み取り", doneMessage: "ケースの情報を読み取りました")
     }
 
+    /// タグの種類を調べるだけの診断。
+    func scanTagType() {
+        guard !isBusy else { return }
+        appendLog("―― タグの種類を調べる ――")
+        isBusy = true
+        canResume = false
+        statusText = nil
+        statusIsError = false
+        Task {
+            defer { isBusy = false }
+            do {
+                let result = try await TagScanner().run()
+                appendLog(result)
+                statusText = "タグを検出しました\n\(result)"
+            } catch {
+                let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                appendLog("失敗: \(message)")
+                statusText = message
+                statusIsError = true
+            }
+        }
+    }
+
     func resume() {
         guard let job = pendingJob, job.canResume else { return }
         appendLog("―― 続きから再開 ――")

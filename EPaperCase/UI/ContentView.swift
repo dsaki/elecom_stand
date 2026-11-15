@@ -68,6 +68,11 @@ struct ContentView: View {
                         } label: {
                             Label("ケースの情報を読み取る", systemImage: "info.circle")
                         }
+                        Button {
+                            model.scanTagType()
+                        } label: {
+                            Label("タグの種類を調べる（診断）", systemImage: "dot.radiowaves.left.and.right")
+                        }
                         Button(role: .destructive) {
                             confirmWhite = true
                         } label: {
