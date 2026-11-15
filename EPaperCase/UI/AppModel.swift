@@ -7,7 +7,7 @@ struct AppSettings: Equatable, Codable {
     /// 最後にケースから読み取れたレイアウト（プレビューの寸法合わせ用）
     var lastLayout: PanelLayout?
 
-    private static let key = "settings.v2"
+    private static let key = "settings.v3"
 
     static func load() -> AppSettings {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -197,7 +197,7 @@ final class AppModel: ObservableObject {
                         job: job,
                         startMessage: first
                             ? "ケースの内側（スマホを入れる面）をスマホ背面の上部に重ねてください"
-                            : "続きを書き込みます。そのまま動かさないでください",
+                            : "続きを行います。そのまま動かさないでください",
                         doneMessage: doneMessage,
                         log: { [weak self] line in
                             Task { @MainActor in self?.appendLog(line) }
@@ -207,7 +207,7 @@ final class AppModel: ObservableObject {
                     if outcome == .finished { break }
                     // 読み取りシートが閉じきるのを待ってから開き直す。
                     first = false
-                    try await Task.sleep(nanoseconds: 3_000_000_000)
+                    try await Task.sleep(nanoseconds: 2_500_000_000)
                 }
                 if let detected = job.layout {
                     settings.lastLayout = detected

@@ -41,7 +41,7 @@ struct WriteOptions: Equatable, Codable {
     /// 描画指示から実際にパネルの電源を入れるまで基板に待たせる時間（100ms 単位）。
     var powerOnDelayTenths = 5
     /// タグに接続してから描画指示を送るまで、給電だけして待つ秒数。
-    var chargeSeconds: Double = 2.5
+    var chargeSeconds: Double = 1.5
 
     var pin: Data? {
         switch pinMode {
@@ -111,16 +111,16 @@ final class WriteJob {
         var reconnectAfter: TimeInterval = 12
         /// セッション開始からこの秒数を超えたら、転送の途中でセッションを張り直す
         var newSessionAfterDuringUpload: TimeInterval = 42
-        /// セッション開始からこの秒数を超えていたら、描画の前にセッションを張り直す
-        var newSessionBeforeRefresh: TimeInterval = 25
-        /// 接続からこの秒数を超えていたら、描画の前につなぎ直す
-        var reconnectBeforeRefresh: TimeInterval = 6
+        /// 描画は読み取りシートを開いた直後に始めたい（1回のシートで使える時間に限りがあるため）。
+        /// シートを開いてから、または接続してからこの秒数を超えていたら、描画の前にシートを開き直す。
+        var freshSessionAge: TimeInterval = 6
         var pollInterval: TimeInterval = 0.4
         var pollTimeout: TimeInterval = 60
         /// 描画待ち中につなぎ直して待ち続ける回数の上限
-        var maxRefreshReconnects = 4
-        /// 描画待ち中、接続からこの秒数を超えたら iOS に切られる前に自分からつなぎ直す
-        var reconnectDuringRefresh: TimeInterval = 14
+        /// 実機では、同じ読み取りシートで2回目のつなぎ直しをするとシートが無効になった。
+        var maxRefreshReconnects = 1
+        /// 描画待ち中、接続からこの秒数を超えたら iOS に切られる（20秒）前に自分からつなぎ直す
+        var reconnectDuringRefresh: TimeInterval = 18
     }
 
     let kind: Kind
@@ -145,6 +145,7 @@ final class WriteJob {
     private(set) var refreshStartedAt: Date?
     private(set) var refreshSeenBusy = false
     private(set) var refreshReconnects = 0
+    private var freshSessionRequested = false
 
     init(kind: Kind, options: WriteOptions, makeImage: ((PanelLayout) throws -> [UInt8])? = nil) {
         self.kind = kind
@@ -292,13 +293,12 @@ final class WriteJob {
         let refreshMessage = "画面を更新中…（30秒ほど）\n終わるまでスマホとケースを動かさないでください"
         if refreshStartedAt == nil {
             let time = now()
-            if time.timeIntervalSince(sessionStartedAt) > timing.newSessionBeforeRefresh {
-                log("画面更新の前にセッションを張り直します")
+            if !freshSessionRequested,
+               time.timeIntervalSince(sessionStartedAt) > timing.freshSessionAge
+                || time.timeIntervalSince(connectedAt) > timing.freshSessionAge {
+                freshSessionRequested = true
+                log("画面更新に時間を確保するため、読み取りを開き直します")
                 return .newSession
-            }
-            if time.timeIntervalSince(connectedAt) > timing.reconnectBeforeRefresh {
-                log("画面更新の前につなぎ直します")
-                return .reconnect
             }
 
             // 描画の開始時はパネルの昇圧で大きな電力を使う。接続直後に指示すると電圧が落ちて

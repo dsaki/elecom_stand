@@ -478,7 +478,7 @@ final class WriteJobTests: XCTestCase {
             XCTAssertLessThan(outcomes.count, 10)
             outcomes.append(try await job.run(transport: board, connectedAt: clock, sessionStartedAt: clock) { _ in })
         }
-        XCTAssertEqual(outcomes, [.reconnect, .reconnect, .finished])
+        XCTAssertEqual(outcomes, [.reconnect, .finished])
         XCTAssertEqual(board.refreshCount, 1)
     }
 
