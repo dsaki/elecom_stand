@@ -28,7 +28,9 @@ enum FMSC {
     ///   - blocking: P2。true (0x00) なら基板が応答を保留する（どこまで待つかは基板による）。
     ///   - skipDetection: P1 の最上位ビット。下位は電源投入の待ち時間（100ms 単位、ここでは 5）。
     static func refresh(blocking: Bool, skipDetection: Bool = true) -> Data {
-        Data([0xF0, 0xD4, (skipDetection ? 0x80 : 0x00) | 0x05, blocking ? 0x00 : 0x80, 0x00])
+        let p1: UInt8 = skipDetection ? 0x85 : 0x05
+        let p2: UInt8 = blocking ? 0x00 : 0x80
+        return Data([0xF0, 0xD4, p1, p2, 0x00])
     }
 
     /// 再開の単位。1ブロック分のパケットは必ず続けて送る。
