@@ -69,9 +69,9 @@ final class AppModel: ObservableObject {
             preview = nil
             return
         }
-        let layout = layout
-        let placement = placement
-        let adjustments = settings.adjustments
+        let layout = self.layout
+        let placement = self.placement
+        let adjustments = self.settings.adjustments
         previewTask = Task {
             let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
                 let indices = ImageRenderer.indices(from: source, layout: layout, placement: placement, adjustments: adjustments)
@@ -102,8 +102,8 @@ final class AppModel: ObservableObject {
 
     func writePhoto() {
         guard let source else { return }
-        let placement = placement
-        let adjustments = settings.adjustments
+        let placement = self.placement
+        let adjustments = self.settings.adjustments
         start(
             WriteJob(kind: .write, options: settings.options) { layout in
                 ImageRenderer.indices(from: source, layout: layout, placement: placement, adjustments: adjustments)
