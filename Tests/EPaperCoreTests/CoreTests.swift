@@ -96,17 +96,20 @@ final class PanelInfoTests: XCTestCase {
     }
 
     func testOverridesAndErrors() throws {
-        let info = PanelInfo(tlv: Data(hex: "A0070001000190012C A10701000000000000")!)
+        let info = PanelInfo(tlv: Data(hex: "A00700010001900130 A10701000000000000")!)
         let bw = try PanelLayout(info: info)
         XCTAssertEqual(bw.colorMode, .blackWhite)
-        XCTAssertEqual([bw.nativeWidth, bw.nativeHeight], [300, 400])
+        XCTAssertEqual([bw.nativeWidth, bw.nativeHeight], [304, 400])
 
         var overrides = LayoutOverrides()
         overrides.colorMode = .fourColor
         overrides.scanMode = .vertical
         let forced = try PanelLayout(info: info, overrides: overrides)
-        XCTAssertEqual([forced.nativeWidth, forced.nativeHeight], [300, 200])
+        XCTAssertEqual([forced.nativeWidth, forced.nativeHeight], [304, 200])
         XCTAssertEqual(forced.scanMode, .vertical)
+
+        // 1ラインが8ビット境界に揃わない形状は、誤った解釈の可能性が高いので受け付けない
+        XCTAssertThrowsError(try PanelLayout(info: PanelInfo(tlv: Data(hex: "A0070001000190012C A10701000000000000")!)))
 
         XCTAssertThrowsError(try PanelLayout(info: PanelInfo(tlv: Data(hex: "C10401020304")!))) { error in
             XCTAssertEqual(error as? PanelLayout.LayoutError, .missingGeometry)
