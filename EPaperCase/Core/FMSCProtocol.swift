@@ -24,9 +24,11 @@ enum FMSC {
     }
 
     /// 保存済みの画像を画面に反映する。
-    /// - Parameter blocking: true なら描画が終わるまで基板が応答を保留する。
-    static func refresh(blocking: Bool) -> Data {
-        Data([0xF0, 0xD4, 0x85, blocking ? 0x00 : 0x80, 0x00])
+    /// - Parameters:
+    ///   - blocking: P2。true (0x00) なら基板が応答を保留する（どこまで待つかは基板による）。
+    ///   - skipDetection: P1 の最上位ビット。下位は電源投入の待ち時間（100ms 単位、ここでは 5）。
+    static func refresh(blocking: Bool, skipDetection: Bool = true) -> Data {
+        Data([0xF0, 0xD4, (skipDetection ? 0x80 : 0x00) | 0x05, blocking ? 0x00 : 0x80, 0x00])
     }
 
     /// 再開の単位。1ブロック分のパケットは必ず続けて送る。

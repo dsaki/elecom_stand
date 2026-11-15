@@ -250,6 +250,7 @@ final class UploadEncodingTests: XCTestCase {
     func testFixedCommands() {
         XCTAssertEqual(FMSC.refresh(blocking: true).hexString, "F0D4850000")
         XCTAssertEqual(FMSC.refresh(blocking: false).hexString, "F0D4858000")
+        XCTAssertEqual(FMSC.refresh(blocking: true, skipDetection: false).hexString, "F0D4050000")
         XCTAssertEqual(FMSC.verifyPIN(Data([1, 2, 3, 4, 5])).hexString, "00200001050102030405")
         XCTAssertEqual(FMSC.checkAccess.hexString, "F0D8000005000000000E")
     }
@@ -268,6 +269,10 @@ private final class MockBoard: APDUTransport {
     var completedBlocks: [Int: Data] = [:]
     var refreshCount = 0
     var onSend: ((Data) -> Void)?
+    /// この回数目の状態確認で、接続切れ（例外）を起こす
+    var dropOnBusyPoll: Int?
+    var busyPollCount = 0
+    struct Dropped: Error {}
 
     func send(_ apdu: Data) async throws -> APDUResponse {
         sent.append(apdu)
@@ -296,6 +301,8 @@ private final class MockBoard: APDUTransport {
             refreshCount += 1
             return APDUResponse(data: Data(), sw: refreshStatus)
         case (0xF0, 0xDE):
+            busyPollCount += 1
+            if busyPollCount == dropOnBusyPoll { throw Dropped() }
             if busyPolls > 0 {
                 busyPolls -= 1
                 return APDUResponse(data: Data([0x01]), sw: 0x9000)
@@ -431,6 +438,24 @@ final class WriteJobTests: XCTestCase {
         XCTAssertFalse(board.sent.contains { $0[1] == 0xD3 })
         XCTAssertTrue(board.sent.contains { $0.hexString == "F0D4858000" })
         XCTAssertEqual(board.sent.filter { $0[1] == 0xDE }.count, 4)
+    }
+
+    func testConnectionLossDuringRefreshReconnectsWithoutResendingRefresh() async throws {
+        let board = MockBoard()
+        board.busyPolls = 5
+        board.dropOnBusyPoll = 3
+        let job = WriteJob(kind: .write, options: WriteOptions()) { self.checkerImage($0) }
+        job.sleep = { _ in }
+        let start = Date()
+        let first = try await job.run(transport: board, connectedAt: start, sessionStartedAt: start) { _ in }
+        XCTAssertEqual(first, .reconnect)
+        let second = try await job.run(transport: board, connectedAt: Date(), sessionStartedAt: start) { _ in }
+        XCTAssertEqual(second, .finished)
+        // 描画指示と画像は一度しか送らない
+        XCTAssertEqual(board.refreshCount, 1)
+        let imagePackets = board.sent.filter { $0[1] == 0xD3 }
+        XCTAssertEqual(Set(imagePackets).count, imagePackets.count)
+        XCTAssertEqual(job.refreshReconnects, 1)
     }
 
     func testErrorsAreReportedWithStatusWord() async throws {

@@ -36,6 +36,8 @@ struct WriteOptions: Equatable, Codable {
     var customPINHex = ""
     /// true: 描画完了まで応答を待つ D4。false: 非同期 D4 + 状態ポーリング。
     var blockingRefresh = true
+    /// D4 の P1 最上位ビット（検出の省略）。
+    var skipDetection = true
 
     var pin: Data? {
         switch pinMode {
@@ -110,7 +112,9 @@ final class WriteJob {
         /// 接続からこの秒数を超えていたら、描画の前につなぎ直す
         var reconnectBeforeRefresh: TimeInterval = 3
         var pollInterval: TimeInterval = 0.4
-        var pollTimeout: TimeInterval = 45
+        var pollTimeout: TimeInterval = 50
+        /// 描画待ち中に接続が切れたとき、つなぎ直して待ち続ける回数の上限
+        var maxRefreshReconnects = 3
     }
 
     let kind: Kind
@@ -131,6 +135,10 @@ final class WriteJob {
     private(set) var nextBlock = 0
     private(set) var uploadDone = false
     private(set) var finished = false
+    /// 描画指示 (D4) を送った時刻。送信済みなら、つなぎ直しても D4 は送り直さない。
+    private(set) var refreshStartedAt: Date?
+    private(set) var refreshSeenBusy = false
+    private(set) var refreshReconnects = 0
 
     init(kind: Kind, options: WriteOptions, makeImage: ((PanelLayout) throws -> [UInt8])? = nil) {
         self.kind = kind
@@ -275,54 +283,67 @@ final class WriteJob {
         }
 
         // 5. 画面更新。4色パネルは時間がかかるので、接続し直して持ち時間を確保する。
-        let time = now()
-        if time.timeIntervalSince(sessionStartedAt) > timing.newSessionBeforeRefresh {
-            log("画面更新の前にセッションを張り直します")
-            return .newSession
-        }
-        if time.timeIntervalSince(connectedAt) > timing.reconnectBeforeRefresh {
-            log("画面更新の前につなぎ直します")
-            return .reconnect
-        }
+        let refreshMessage = "画面を更新中…（30秒ほど）\n終わるまでスマホとケースを動かさないでください"
+        if refreshStartedAt == nil {
+            let time = now()
+            if time.timeIntervalSince(sessionStartedAt) > timing.newSessionBeforeRefresh {
+                log("画面更新の前にセッションを張り直します")
+                return .newSession
+            }
+            if time.timeIntervalSince(connectedAt) > timing.reconnectBeforeRefresh {
+                log("画面更新の前につなぎ直します")
+                return .reconnect
+            }
 
-        progress(Progress(message: "画面を更新中…（20〜30秒）\n終わるまでスマホとケースを動かさないでください", fraction: 1))
-        let refresh = try await exchange(transport, "画面更新(D4)", FMSC.refresh(blocking: options.blockingRefresh))
-        try requireOK(refresh, "画面更新")
+            progress(Progress(message: refreshMessage, fraction: 1))
+            let command = FMSC.refresh(blocking: options.blockingRefresh, skipDetection: options.skipDetection)
+            let refresh = try await exchange(transport, "画面更新(D4)", command)
+            try requireOK(refresh, "画面更新")
+            refreshStartedAt = now()
+        } else {
+            progress(Progress(message: refreshMessage, fraction: 1))
+            log("描画の途中でつなぎ直しました。状態確認を続けます")
+        }
+        let started = refreshStartedAt ?? now()
 
-        // D4 が成功を返しても、パネルがまだ描画中のことがある。描画中に電波を止めると
-        // 前の絵が残ったまま中断されるので、待機中に戻るまで通信を続けて給電を保つ。
-        let started = now()
-        var seenBusy = false
+        // D4 が成功を返しても、パネルはまだ描画中。描画中に電波を止めると前の絵が残ったまま
+        // 中断されるので、待機中に戻るまで通信を続けて給電を保つ。
+        // iOS はタグとの接続を約20秒で切るため、切れたら同じ読み取りシートのままつなぎ直す。
         var idleCount = 0
+        var firstPoll = true
         while true {
             await sleep(timing.pollInterval)
             let state: APDUResponse
-            if options.blockingRefresh {
-                // 状態確認に対応しない基板でも止めない。
-                guard let response = try? await exchange(transport, "状態確認(DE)", FMSC.busyStatus, logged: false),
-                      response.isOK else {
-                    log("状態確認に応答しないため、描画待ちを打ち切ります")
+            do {
+                state = try await exchange(transport, "状態確認(DE)", FMSC.busyStatus, logged: firstPoll)
+            } catch {
+                guard refreshReconnects < timing.maxRefreshReconnects else { throw error }
+                refreshReconnects += 1
+                log("描画待ち中に接続が切れました (描画開始から \(String(format: "%.1f", now().timeIntervalSince(started))) 秒)。つなぎ直します")
+                return .reconnect
+            }
+            firstPoll = false
+            guard state.isOK else {
+                if options.blockingRefresh {
+                    log("状態確認に対応していないため、描画待ちを打ち切ります")
                     break
                 }
-                state = response
-            } else {
-                state = try await exchange(transport, "状態確認(DE)", FMSC.busyStatus, logged: false)
-                try requireOK(state, "状態確認")
+                throw WriteError.status(step: "状態確認", sw: state.sw)
             }
             if state.data.first == 0x01 {
-                if !seenBusy { log("パネルが描画中です。完了を待ちます") }
-                seenBusy = true
+                if !refreshSeenBusy { log("パネルが描画中です。完了を待ちます") }
+                refreshSeenBusy = true
                 idleCount = 0
             } else {
                 idleCount += 1
-                if idleCount >= 2 && (seenBusy || options.blockingRefresh) { break }
+                if idleCount >= 2 && (refreshSeenBusy || options.blockingRefresh) { break }
                 if idleCount >= 8 { throw WriteError.refreshNotConfirmed }
             }
             if now().timeIntervalSince(started) > timing.pollTimeout {
                 throw WriteError.status(step: "画面更新待ち", sw: 0x68CB)
             }
         }
-        log("描画待ち \(String(format: "%.1f", now().timeIntervalSince(started))) 秒 (描画中を確認: \(seenBusy ? "はい" : "いいえ"))")
+        log("描画待ち \(String(format: "%.1f", now().timeIntervalSince(started))) 秒 (描画中を確認: \(refreshSeenBusy ? "はい" : "いいえ") / つなぎ直し: \(refreshReconnects) 回)")
 
         log("画面更新が完了しました")
         finished = true

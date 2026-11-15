@@ -28,7 +28,8 @@ struct SettingsView: View {
                         Text("4色").tag(ColorMode?.some(.fourColor))
                         Text("白黒").tag(ColorMode?.some(.blackWhite))
                     }
-                    Toggle("描画完了まで応答を待つ", isOn: $model.settings.options.blockingRefresh)
+                    Toggle("描画指示: 応答を待つ (P2=00)", isOn: $model.settings.options.blockingRefresh)
+                    Toggle("描画指示: 検出を省略 (P1=85)", isOn: $model.settings.options.skipDetection)
                 } header: {
                     Text("詳細（通常は変更不要）")
                 } footer: {
