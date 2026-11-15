@@ -340,7 +340,9 @@ final class WriteJobTests: XCTestCase {
         let expected = FramePacker.pack(portrait: checkerImage(seenLayout!), layout: seenLayout!)
         XCTAssertEqual(board.storedFrame, expected)
         XCTAssertEqual(board.refreshCount, 1)
-        XCTAssertEqual(board.sent.last?.hexString, "F0D4850000")
+        XCTAssertTrue(board.sent.contains { $0.hexString == "F0D4850000" })
+        // D4 の後も、描画が終わるまで状態確認を続けて給電を保つ
+        XCTAssertEqual(board.sent.suffix(4).map { $0.hexString }, [String](repeating: "F0DE000001", count: 4))
         // パネル設定を書き換えるコマンド (DA/DB) は絶対に送らない
         XCTAssertFalse(board.sent.contains { $0[0] == 0xF0 && ($0[1] == 0xDA || $0[1] == 0xDB) })
     }

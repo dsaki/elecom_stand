@@ -289,27 +289,40 @@ final class WriteJob {
         let refresh = try await exchange(transport, "画面更新(D4)", FMSC.refresh(blocking: options.blockingRefresh))
         try requireOK(refresh, "画面更新")
 
-        if !options.blockingRefresh {
-            let started = now()
-            var seenBusy = false
-            var idleCount = 0
-            while true {
-                await sleep(timing.pollInterval)
-                let state = try await exchange(transport, "状態確認(DE)", FMSC.busyStatus, logged: false)
+        // D4 が成功を返しても、パネルがまだ描画中のことがある。描画中に電波を止めると
+        // 前の絵が残ったまま中断されるので、待機中に戻るまで通信を続けて給電を保つ。
+        let started = now()
+        var seenBusy = false
+        var idleCount = 0
+        while true {
+            await sleep(timing.pollInterval)
+            let state: APDUResponse
+            if options.blockingRefresh {
+                // 状態確認に対応しない基板でも止めない。
+                guard let response = try? await exchange(transport, "状態確認(DE)", FMSC.busyStatus, logged: false),
+                      response.isOK else {
+                    log("状態確認に応答しないため、描画待ちを打ち切ります")
+                    break
+                }
+                state = response
+            } else {
+                state = try await exchange(transport, "状態確認(DE)", FMSC.busyStatus, logged: false)
                 try requireOK(state, "状態確認")
-                if state.data.first == 0x01 {
-                    seenBusy = true
-                    idleCount = 0
-                } else {
-                    idleCount += 1
-                    if seenBusy && idleCount >= 2 { break }
-                    if !seenBusy && idleCount >= 8 { throw WriteError.refreshNotConfirmed }
-                }
-                if now().timeIntervalSince(started) > timing.pollTimeout {
-                    throw WriteError.status(step: "画面更新待ち", sw: 0x68CB)
-                }
+            }
+            if state.data.first == 0x01 {
+                if !seenBusy { log("パネルが描画中です。完了を待ちます") }
+                seenBusy = true
+                idleCount = 0
+            } else {
+                idleCount += 1
+                if idleCount >= 2 && (seenBusy || options.blockingRefresh) { break }
+                if idleCount >= 8 { throw WriteError.refreshNotConfirmed }
+            }
+            if now().timeIntervalSince(started) > timing.pollTimeout {
+                throw WriteError.status(step: "画面更新待ち", sw: 0x68CB)
             }
         }
+        log("描画待ち \(String(format: "%.1f", now().timeIntervalSince(started))) 秒 (描画中を確認: \(seenBusy ? "はい" : "いいえ"))")
 
         log("画面更新が完了しました")
         finished = true
