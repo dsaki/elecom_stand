@@ -41,7 +41,7 @@ struct WriteOptions: Equatable, Codable {
     /// 描画指示から実際にパネルの電源を入れるまで基板に待たせる時間（100ms 単位）。
     var powerOnDelayTenths = 5
     /// タグに接続してから描画指示を送るまで、給電だけして待つ秒数。
-    var chargeSeconds: Double = 1.5
+    var chargeSeconds: Double = 1.0
 
     var pin: Data? {
         switch pinMode {
@@ -99,6 +99,8 @@ final class WriteJob {
         case reconnect
         /// NFC セッションを開き直して run を呼び直す
         case newSession
+        /// 接続は切れたが描画はまだ続いているはず。読み取りシートを開いたまましばらく待って終える
+        case linger
     }
 
     struct Progress: Equatable {
@@ -117,10 +119,11 @@ final class WriteJob {
         var pollInterval: TimeInterval = 0.4
         var pollTimeout: TimeInterval = 60
         /// 描画待ち中につなぎ直して待ち続ける回数の上限
-        /// 実機では、同じ読み取りシートで2回目のつなぎ直しをするとシートが無効になった。
         var maxRefreshReconnects = 1
-        /// 描画待ち中、接続からこの秒数を超えたら iOS に切られる（20秒）前に自分からつなぎ直す
-        var reconnectDuringRefresh: TimeInterval = 18
+        /// 描画待ち中、読み取りシートを開いてからこの秒数を超えたら自分からつなぎ直す。
+        /// 実機では、シートを開いて約14秒まではつなぎ直せたが、18秒以降はシートごと無効になった。
+        /// つなぎ直すと接続の制限時間（約20秒）が数え直されるので、できるだけ遅い時点で1回だけ行う。
+        var reconnectAtSessionAge: TimeInterval = 12.5
     }
 
     let kind: Kind
@@ -146,6 +149,8 @@ final class WriteJob {
     private(set) var refreshSeenBusy = false
     private(set) var refreshReconnects = 0
     private var freshSessionRequested = false
+    /// 描画の完了を確認できないまま終えた
+    private(set) var refreshUnconfirmed = false
 
     init(kind: Kind, options: WriteOptions, makeImage: ((PanelLayout) throws -> [UInt8])? = nil) {
         self.kind = kind
@@ -331,7 +336,7 @@ final class WriteJob {
         var firstPoll = true
         while true {
             // iOS に20秒で切られると読み取りシートごと無効になるので、その前に自分からつなぎ直す。
-            if now().timeIntervalSince(connectedAt) > timing.reconnectDuringRefresh,
+            if now().timeIntervalSince(sessionStartedAt) > timing.reconnectAtSessionAge,
                refreshReconnects < timing.maxRefreshReconnects {
                 refreshReconnects += 1
                 log("描画待ちを続けるため、つなぎ直します (描画開始から \(String(format: "%.1f", now().timeIntervalSince(started))) 秒)")
@@ -342,9 +347,16 @@ final class WriteJob {
             do {
                 state = try await exchange(transport, "状態確認(DE)", FMSC.busyStatus, logged: firstPoll)
             } catch {
-                guard refreshReconnects < timing.maxRefreshReconnects else { throw error }
+                let elapsed = String(format: "%.1f", now().timeIntervalSince(started))
+                guard refreshReconnects < timing.maxRefreshReconnects else {
+                    // つなぎ直しは使い切った。シートを開いたままにして給電が続くことに期待する。
+                    log("描画待ち中に接続が切れました (描画開始から \(elapsed) 秒)。シートを開いたまま待ちます")
+                    refreshUnconfirmed = true
+                    finished = true
+                    return .linger
+                }
                 refreshReconnects += 1
-                log("描画待ち中に接続が切れました (描画開始から \(String(format: "%.1f", now().timeIntervalSince(started))) 秒)。読み取りを開き直します")
+                log("描画待ち中に接続が切れました (描画開始から \(elapsed) 秒)。読み取りを開き直します")
                 return .newSession
             }
             firstPoll = false

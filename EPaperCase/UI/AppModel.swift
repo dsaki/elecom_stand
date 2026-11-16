@@ -7,7 +7,7 @@ struct AppSettings: Equatable, Codable {
     /// 最後にケースから読み取れたレイアウト（プレビューの寸法合わせ用）
     var lastLayout: PanelLayout?
 
-    private static let key = "settings.v3"
+    private static let key = "settings.v4"
 
     static func load() -> AppSettings {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -207,12 +207,15 @@ final class AppModel: ObservableObject {
                     if outcome == .finished { break }
                     // 読み取りシートが閉じきるのを待ってから開き直す。
                     first = false
-                    try await Task.sleep(nanoseconds: 2_500_000_000)
+                    try await Task.sleep(nanoseconds: 5_000_000_000)
                 }
                 if let detected = job.layout {
                     settings.lastLayout = detected
                 }
-                statusText = doneMessage
+                statusText = job.refreshUnconfirmed
+                    ? "描画の完了を確認できないまま終了しました。画面を確認し、乱れていれば「再描画だけ行う」を試してください"
+                    : doneMessage
+                statusIsError = job.refreshUnconfirmed
                 if job.kind == .probe, let info = job.info {
                     statusText = "\(doneMessage)\n\(job.layout?.summary ?? "形状不明")\n\(info.dump)"
                 }

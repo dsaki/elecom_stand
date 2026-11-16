@@ -161,6 +161,12 @@ final class NFCWriter: NSObject, NFCTagReaderSessionDelegate {
                     session.invalidate()
                 case .reconnect:
                     session.restartPolling()
+                case .linger:
+                    session.alertMessage = "仕上げ中…あと少し、そのまま動かさないでください"
+                    try? await Task.sleep(nanoseconds: 14_000_000_000)
+                    session.alertMessage = "終了しました。画面を確認してください"
+                    finish(.success(.finished))
+                    session.invalidate()
                 case .newSession:
                     session.alertMessage = "続きの準備中…そのまま動かさずにお待ちください"
                     finish(.success(.newSession))

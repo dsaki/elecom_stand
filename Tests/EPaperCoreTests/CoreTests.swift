@@ -482,6 +482,24 @@ final class WriteJobTests: XCTestCase {
         XCTAssertEqual(board.refreshCount, 1)
     }
 
+    func testLingersWhenConnectionDropsAfterTheOnlyReconnect() async throws {
+        let board = MockBoard()
+        board.busyPolls = 40
+        board.dropOnBusyPoll = 20
+        var clock = Date(timeIntervalSince1970: 9_000)
+        let job = WriteJob(kind: .refreshOnly, options: fastOptions())
+        job.now = { clock }
+        job.sleep = { _ in clock += 1 }
+        let sessionStart = clock
+        let first = try await job.run(transport: board, connectedAt: clock, sessionStartedAt: sessionStart) { _ in }
+        XCTAssertEqual(first, .reconnect)
+        let second = try await job.run(transport: board, connectedAt: clock, sessionStartedAt: sessionStart) { _ in }
+        XCTAssertEqual(second, .linger)
+        XCTAssertTrue(job.refreshUnconfirmed)
+        XCTAssertFalse(job.canResume)
+        XCTAssertEqual(board.refreshCount, 1)
+    }
+
     func testErrorsAreReportedWithStatusWord() async throws {
         let board = MockBoard()
         board.refreshStatus = 0x68CA
