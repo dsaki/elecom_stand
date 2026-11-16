@@ -118,6 +118,12 @@ final class NFCWriter: NSObject, NFCTagReaderSessionDelegate {
         } else {
             mapped = .other(error.localizedDescription)
         }
+        // 描画待ちの最後に接続が切れると、iOS は数秒後にシートも閉じる。これは想定内なので、
+        // 「完了を確認できないまま終了」として扱う（エラーにはしない）。
+        if job.refreshUnconfirmed {
+            finish(.success(.finished))
+            return
+        }
         // 正常終了時は finish 済みなので、ここでの呼び出しは何もしない。
         finish(.failure(mapped))
     }
