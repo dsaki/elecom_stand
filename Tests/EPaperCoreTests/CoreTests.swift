@@ -453,6 +453,7 @@ final class WriteJobTests: XCTestCase {
         board.busyPolls = 5
         board.dropOnBusyPoll = 3
         let job = WriteJob(kind: .write, options: fastOptions()) { self.checkerImage($0) }
+        job.timing.maxRefreshReconnects = 1
         job.sleep = { _ in }
         let start = Date()
         let first = try await job.run(transport: board, connectedAt: start, sessionStartedAt: start) { _ in }
@@ -472,6 +473,7 @@ final class WriteJobTests: XCTestCase {
         var clock = Date(timeIntervalSince1970: 5_000)
         let job = WriteJob(kind: .refreshOnly, options: fastOptions())
         job.now = { clock }
+        job.timing.maxRefreshReconnects = 1
         job.sleep = { seconds in clock += 1 }
         var outcomes: [WriteJob.Outcome] = []
         while outcomes.last != .finished {
@@ -489,6 +491,7 @@ final class WriteJobTests: XCTestCase {
         var clock = Date(timeIntervalSince1970: 9_000)
         let job = WriteJob(kind: .refreshOnly, options: fastOptions())
         job.now = { clock }
+        job.timing.maxRefreshReconnects = 1
         job.sleep = { _ in clock += 1 }
         let sessionStart = clock
         let first = try await job.run(transport: board, connectedAt: clock, sessionStartedAt: sessionStart) { _ in }
@@ -497,6 +500,20 @@ final class WriteJobTests: XCTestCase {
         XCTAssertEqual(second, .linger)
         XCTAssertTrue(job.refreshUnconfirmed)
         XCTAssertFalse(job.canResume)
+        XCTAssertEqual(board.refreshCount, 1)
+    }
+
+    func testByDefaultRefreshIsNeverInterruptedByReconnecting() async throws {
+        let board = MockBoard()
+        board.busyPolls = 40
+        board.dropOnBusyPoll = 18
+        var clock = Date(timeIntervalSince1970: 7_000)
+        let job = WriteJob(kind: .refreshOnly, options: fastOptions())
+        job.now = { clock }
+        job.sleep = { _ in clock += 1 }
+        let outcome = try await job.run(transport: board, connectedAt: clock, sessionStartedAt: clock) { _ in }
+        XCTAssertEqual(outcome, .linger)
+        XCTAssertEqual(job.refreshReconnects, 0)
         XCTAssertEqual(board.refreshCount, 1)
     }
 

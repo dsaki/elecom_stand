@@ -7,7 +7,7 @@ struct AppSettings: Equatable, Codable {
     /// 最後にケースから読み取れたレイアウト（プレビューの寸法合わせ用）
     var lastLayout: PanelLayout?
 
-    private static let key = "settings.v4"
+    private static let key = "settings.v5"
 
     static func load() -> AppSettings {
         guard let data = UserDefaults.standard.data(forKey: key),

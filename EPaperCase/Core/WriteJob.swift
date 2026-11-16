@@ -41,7 +41,7 @@ struct WriteOptions: Equatable, Codable {
     /// 描画指示から実際にパネルの電源を入れるまで基板に待たせる時間（100ms 単位）。
     var powerOnDelayTenths = 5
     /// タグに接続してから描画指示を送るまで、給電だけして待つ秒数。
-    var chargeSeconds: Double = 1.0
+    var chargeSeconds: Double = 0.5
 
     var pin: Data? {
         switch pinMode {
@@ -116,10 +116,11 @@ final class WriteJob {
         /// 描画は読み取りシートを開いた直後に始めたい（1回のシートで使える時間に限りがあるため）。
         /// シートを開いてから、または接続してからこの秒数を超えていたら、描画の前にシートを開き直す。
         var freshSessionAge: TimeInterval = 6
-        var pollInterval: TimeInterval = 0.4
+        var pollInterval: TimeInterval = 1.0
         var pollTimeout: TimeInterval = 60
         /// 描画待ち中につなぎ直して待ち続ける回数の上限
-        var maxRefreshReconnects = 1
+        /// 既定は 0（つなぎ直さない）。実機で、つなぎ直した時点で描画が中断されている疑いが強いため。
+        var maxRefreshReconnects = 0
         /// 描画待ち中、読み取りシートを開いてからこの秒数を超えたら自分からつなぎ直す。
         /// 実機では、シートを開いて約14秒まではつなぎ直せたが、18秒以降はシートごと無効になった。
         /// つなぎ直すと接続の制限時間（約20秒）が数え直されるので、できるだけ遅い時点で1回だけ行う。
